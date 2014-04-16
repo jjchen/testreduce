@@ -280,7 +280,7 @@ CassandraBackend.prototype.getTestToRetry = function() {
 
 CassandraBackend.prototype.updateCommits = function(lastCommitTimestamp, commit, date) {
     if (lastCommitTimestamp < date) {
-        this.commits.unshift( { hash: commit, timestamp: date, isKeyframe: false } );
+        var numCommits = this.commits.unshift( { hash: commit, timestamp: date, isKeyframe: false } );
         cql = 'insert into commits (hash, tid, keyframe) values (?, ?, ?);';
         args = [new Buffer(commit), tidFromDate(date), false];
         this.client.execute(cql, args, this.consistencies.write, function(err, result) {
@@ -289,15 +289,18 @@ CassandraBackend.prototype.updateCommits = function(lastCommitTimestamp, commit,
             }
         });
 
-        this.getStatistics(new Buffer(commit), function (err, result) {
-            cql = 'insert into revision_summary (revision, errors, skips, fails, numtests) values (?, ? , ? , ?, ?);';
-            args = [new Buffer(commit), result.averages.errors, result.averages.skips, result.averages.fails, result.averages.numtests];
-            this.client.execute(cql, args, this.consistencies.write, function(err, result) {
-                if (err) {
-                    console.log(err);
-                }
+        if (numCommits > 1) {
+            var prevCommit = this.commits[1];
+            this.getStatistics(new Buffer(prevCommit), function (err, result) {
+                cql = 'insert into revision_summary (revision, errors, skips, fails, numtests) values (?, ? , ? , ?, ?);';
+                args = [new Buffer(prevCommit), result.averages.errors, result.averages.skips, result.averages.fails, result.averages.numtests];
+                this.client.execute(cql, args, this.consistencies.write, function(err, result) {
+                    if (err) {
+                        console.log(err);
+                    }
+                });
             });
-        });
+        }
     }
 }
 
@@ -473,9 +476,7 @@ CassandraBackend.prototype.addResult = function(test, commit, result, cb) {
     if (this.testScores[test.toString()] != score) {
         // If changed, update test_by_score
         cql = 'insert into test_by_score (commit, score, delta, test) values (?, ?, ?, ?);';
-        // args = [commit, score, this.testScores[test] - score, test];
-        args = [commit, score, 0, test];
-        
+        args = [commit, score, this.testScores[test.toString()] - score, test];        
         this.client.execute(cql, args, this.consistencies.write, function(err, result) {
             if (err) {
                 console.log(err);
@@ -485,6 +486,12 @@ CassandraBackend.prototype.addResult = function(test, commit, result, cb) {
         // Update scores in memory;
         this.testScores[test.toString()] = score;
     }
+
+    if (errorCount > 0 && result.match('DoesNotExist')) {
+        console.log("Does Not Exist" + test.toString());
+        cql = 'update test_by_score set numfetcherrors = numfetcherrors + 1 where ';
+    }
+
 
     // Update topFails
     var index = findWithAttr(this.topFailsArray, "test", test);
@@ -512,6 +519,52 @@ var countScore = function(score) {
     
     return {skips: skipsCount, fails: failsCount, errors: errorsCount}
 };
+
+function getDistr(commit, isSkips, cb) {
+    var args = [], results = {};
+
+    var cql = "select score from test_by_score where commit = ?";
+    args = args.concat([commit]);
+    this.client.execute(cql, args, this.consistencies.write, function(err, results) {
+        if (err) {
+            console.log("err: " + err);
+            cb(err);
+        } else if (!results || !results.rows) {
+            console.log( 'no seen commits, error in database' );
+            cb(null);
+        } else {
+            //console.log("hooray we have data!: " + JSON.stringify(results, null,'\t'));
+            var fails = {}, skips = {};
+            async.each(results.rows, function(item, callback) {
+                //console.log("item: " + JSON.stringify(item, null,'\t'));
+                var data = item[0];
+                var counts = countScore(data);
+                if (!isSkips) {
+                    if (!fails[counts.fails]) {
+                        fails[counts.fails] = 1;
+                    } else {
+                        fails[counts.fails]++;
+                    }                    
+                } else {
+                    if (!skips[counts.skips]) {
+                        skips[counts.skips] = 1;
+                    } else {
+                        skips[counts.skips]++;
+                    }
+                }
+                callback();
+            }, function(err) {
+                results = {
+                    fails: fails,
+                    skips: skips
+                };
+                console.log("result: " + JSON.stringify(results, null,'\t'));
+                cb(null, results);
+
+            });
+        }
+    });
+}
 
 /**
  * Get results ordered by score
@@ -559,48 +612,20 @@ CassandraBackend.prototype.getTopFails = function(offset, limit, cb) {
 }
 
 CassandraBackend.prototype.getFailsDistr = function(commit, cb) {
-    var args = [], 
-    results = {};
-
-    var cql = "select score from test_by_score where commit = ?"
-    args = args.concat([commit]);
-    this.client.execute(cql, args, this.consistencies.write, function(err, results) {
-        if (err) {
-            console.log("err: " + err);
-            cb(err);
-        } else if (!results || !results.rows) {
-            console.log( 'no seen commits, error in database' );
-            cb(null);
-        } else {
-            //console.log("hooray we have data!: " + JSON.stringify(results, null,'\t'));
-            var fails = {};
-            async.each(results.rows, function(item, callback) {
-                //console.log("item: " + JSON.stringify(item, null,'\t'));
-                var data = item[0];
-                var counts = countScore(data);
-                if (!fails[counts.fails]) {
-                    fails[counts.fails] = 1;
-                } else {
-                    fails[counts.fails]++;
-                }
-                callback();
-            }, function(err) {
-                results = {
-                    fails: fails
-                };
-                console.log("result: " + JSON.stringify(results, null,'\t'));
-                cb(null, results);
-
-            });
-        }
-    });    
+    var distr = getDistr.bind(this);
+    distr(commit, false, cb);
 }
+    
 
 CassandraBackend.prototype.getSkipsDistr = function(commit, cb) {
-    var args = [], 
-    results = {};
+    var distr = getDistr.bind(this);
+    distr(commit, true, cb);    
+}
 
-    var cql = "select score from test_by_score where commit = ?"
+CassandraBackend.prototype.getFailedFetches = function(commit, cb) {
+    var args = [], results = [];
+
+    var cql = "select test, numfetcherrors from test_by_score where commit = ?";
     args = args.concat([commit]);
     this.client.execute(cql, args, this.consistencies.write, function(err, results) {
         if (err) {
@@ -611,27 +636,21 @@ CassandraBackend.prototype.getSkipsDistr = function(commit, cb) {
             cb(null);
         } else {
             //console.log("hooray we have data!: " + JSON.stringify(results, null,'\t'));
-            var skips = {};
+            var failedTests = [];
             async.each(results.rows, function(item, callback) {
                 //console.log("item: " + JSON.stringify(item, null,'\t'));
                 var data = item[0];
-                var counts = countScore(data);
-                if (!skips[counts.skips]) {
-                    skips[counts.skips] = 1;
-                } else {
-                    skips[counts.skips]++;
+                if (data.numfetcherrors >= numFailures) {
+                    failedTests.push(data.test);
                 }
                 callback();
             }, function(err) {
-                results = {
-                    skips: skips
-                };
-                console.log("result: " + JSON.stringify(results, null,'\t'));
+                console.log("result: " + JSON.stringify(failedTests, null,'\t'));
                 cb(null, results);
-
             });
         }
     });    
+    cb(null, results);
 }
 
 // Node.js module exports. This defines what
