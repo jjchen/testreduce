@@ -510,7 +510,7 @@ var extractESF = function (rows, cb) {
                 noerrors++;
                 noskips++;
                 nofails++;
-            } else if (data > 1000) {
+            } else if (data > 10000) {
                 noerrors++;
             } else if (data > 0) {
                 noerrors++;
@@ -585,8 +585,8 @@ CassandraBackend.prototype.addResult = function (test, commit, result, cb) {
     }
 
     if (errorCount > 0 && result.match('DoesNotExist')) {
-        console.log("Does Not Exist" + test.toString());
-        cql = 'update test_by_score set numfetcherrors = numfetcherrors + 1 where ';
+        console.log("Does Not Exist " + test.toString());
+        // cql = 'update test_by_score set numfetcherrors = numfetcherrors + 1 where ';
     }
 
 
@@ -603,14 +603,14 @@ CassandraBackend.prototype.addResult = function (test, commit, result, cb) {
 var statsScore = function (skipCount, failCount, errorCount) {
     // treat <errors,fails,skips> as digits in a base 1000 system
     // and use the number as a score which can help sort in topfails.
-    return errorCount * 1000000 + failCount * 1000 + skipCount;
+    return errorCount * 1000000 + failCount * 10000 + skipCount;
 };
 
 var countScore = function(score) {
-    var skipsCount = score % 1000;
+    var skipsCount = score % 10000;
     score = score - skipsCount;
-    var failsCount = (score % 1000000) / 1000;
-    score = score - failsCount * 1000;
+    var failsCount = (score % 1000000) / 10000;
+    score = score - failsCount * 10000;
     var errorsCount = score / 1000000;    
     
     return {skips: skipsCount, fails: failsCount, errors: errorsCount}
@@ -722,30 +722,30 @@ CassandraBackend.prototype.getSkipsDistr = function(commit, cb) {
 CassandraBackend.prototype.getFailedFetches = function(commit, cb) {
     var args = [], results = [];
 
-    var cql = "select test, numfetcherrors from test_by_score where commit = ?";
-    args = args.concat([commit]);
-    this.client.execute(cql, args, this.consistencies.write, function(err, results) {
-        if (err) {
-            console.log("err: " + err);
-            cb(err);
-        } else if (!results || !results.rows) {
-            console.log( 'no seen commits, error in database' );
-            cb(null);
-        } else {
-            //console.log("hooray we have data!: " + JSON.stringify(results, null,'\t'));
-            var failedTests = [];
-            results.rows.forEach(function(item) {
-                //console.log("item: " + JSON.stringify(item, null,'\t'));
-                var data = item[0];
-                if (data.numfetcherrors >= numFailures) {
-                    failedTests.push(data.test);
-                }
-            });
+    // var cql = "select test, numfetcherrors from test_by_score where commit = ?";
+    // args = args.concat([commit]);
+    // this.client.execute(cql, args, this.consistencies.write, function(err, results) {
+    //     if (err) {
+    //         console.log("err: " + err);
+    //         cb(err);
+    //     } else if (!results || !results.rows) {
+    //         console.log( 'no seen commits, error in database' );
+    //         cb(null);
+    //     } else {
+    //         //console.log("hooray we have data!: " + JSON.stringify(results, null,'\t'));
+    //         var failedTests = [];
+    //         results.rows.forEach(function(item) {
+    //             //console.log("item: " + JSON.stringify(item, null,'\t'));
+    //             var data = item[0];
+    //             if (data.numfetcherrors >= numFailures) {
+    //                 failedTests.push(data.test);
+    //             }
+    //         });
 
-            results = { failedTests: failedTests };
-            cb(null, results);
-        }
-    });    
+    //         results = { failedTests: failedTests };
+    //         cb(null, results);
+    //     }
+    // });    
     cb(null, results);
 }
 
