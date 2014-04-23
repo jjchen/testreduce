@@ -41,7 +41,8 @@ function CassandraBackend(name, config, callback) {
     this.client.on('connection', reconnectCB);
     this.client.connect();
 
-    var numFailures = config.numFailures;
+    var numFailures = config.tries;
+    var numFetchRetries = config.fetches;
 
     self.commits = [];
 
@@ -117,6 +118,7 @@ function getTests(cb) {
         } else {
             // I'm not sure we need to have this, but it exists for now till we decide not to have it.
             for (var i = 0; i < results.rows.length; i++) {
+                // TODO: should be a map from test -> failed fetches
                 this.testsList[results.rows[i]] = true;
             }
             cb(null, 0, results.rows.length);
@@ -124,7 +126,7 @@ function getTests(cb) {
     };
 
     // get tests
-    var cql = 'select test from tests;';
+    var cql = 'select * from tests;';
 
     // And finish it off
     this.client.execute(cql, [], this.consistencies.write, queryCB.bind(this));
@@ -143,12 +145,16 @@ function initTestPQ(commitIndex, numTestsLeft, cb) {
             cb(null);
         } else {
             for (var i = 0; i < results.rows.length; i++) {
+                //TODO: failedFetches
+                // get failed fetches from testsList
+
                 var result = results.rows[i];
                 this.testQueue.enq({
                     test: result[0],
                     score: result[1],
                     commit: result[2].toString(),
-                    failCount: 0
+                    failCount: 0,
+                    // failedFetchCount: failedFetchs
                 });
                 this.testScores[result[0].toString()] = result[1];
             }
@@ -585,8 +591,17 @@ CassandraBackend.prototype.addResult = function (test, commit, result, cb) {
     }
 
     if (errorCount > 0 && result.match('DoesNotExist')) {
+        //TODO: update failfetches in testQueue
+        
         console.log("Does Not Exist " + test.toString());
-        // cql = 'update test_by_score set numfetcherrors = numfetcherrors + 1 where ';
+        cql = 'update tests set numfetcherrors = numfetcherrors + 1 where test = ?'
+        args = [test];
+        this.client.execute(cql, args, this.consistencies.write, function(err, result) {
+            if (err) {
+                console.log(err);
+            } else {
+            }
+        });
     }
 
 

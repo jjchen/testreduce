@@ -347,8 +347,7 @@ var resultWebInterface = function( req, res ) {
 };
 
 var GET_failedFetches = function( req, res ) {
-    var fakecommit = new Buffer("0b5db8b91bfdeb0a304b372dd8dda123b3fd1ab6");
-    backend.getFailedFetches(fakecommit, function(err, result) {
+    backend.getFailedFetches(function(err, result) {
         console.log(result);
         var n = result.length;
         var pageData = [];
