@@ -347,9 +347,34 @@ var resultWebInterface = function( req, res ) {
 };
 
 var GET_failedFetches = function( req, res ) {
-    res.write('<html><body>\n');
-    res.write('Failed fetches page go here');
-    res.end('</body></html>');
+    var fakecommit = new Buffer("0b5db8b91bfdeb0a304b372dd8dda123b3fd1ab6");
+    backend.getFailedFetches(fakecommit, function(err, result) {
+        console.log(result);
+        var n = result.length;
+        var pageData = [];
+        // console.log(result.fails);
+        for (var i = 0; i < result.length; i++) {
+            var prefix = result[i].prefix, title = result[i].title;
+            var name = prefix + ':' + title;
+            pageData.push({
+                url: prefix.replace(/wiki$/, '') + '.wikipedia.org/wiki/' + title,
+                linkName: name.replace('&', '&amp;')
+            });
+        }
+        var heading = n === 0 ? 'No titles returning 404!  All\'s well with the world!' :
+                'The following ' + n + ' titles return 404';
+
+        var data = {
+            alt: n === 0,
+            heading: heading,
+            items: pageData
+        };
+        hbs.registerHelper('formatUrl', function(url) {
+            return 'http://' + encodeURI(url).replace('&', '&amp;');
+        });
+
+        res.render('list.html', data);
+    });
 };
 
 var GET_crashers = function( req, res ) {
