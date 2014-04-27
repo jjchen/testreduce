@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS test_by_score (
 -- List of tests
 CREATE TABLE IF NOT EXISTS tests (
     test blob,
-    numfetcherrors int,
+    numDoesNotExistErrors int,
     PRIMARY KEY (test)
 );
 
