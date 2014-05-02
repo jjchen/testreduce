@@ -7,6 +7,9 @@
 var express = require( 'express' ),
 	optimist = require( 'optimist' );
 
+var TotalTests = 139985;
+
+
 // Default options
 var defaults = {
 	'host': 'localhost',
@@ -201,12 +204,14 @@ var http = require( 'http' ),
 	rtTest = require( '../roundtrip-test.js' );
 
 var testsRun = 0;
-var currentCommit; 
+// var currentCommit; 
 var commitIndex = 1;
 
 
 var getTitle = function( cb ) {
 	// console.log("get title");
+	// console.log(commit);	
+
 	var requestOptions = {
 		uri: 'http://' + config.server.host + ':' +
 			config.server.port + '/title?commit=' + commit + '&ctime=' + encodeURIComponent( ctime ),
@@ -226,8 +231,9 @@ var getTitle = function( cb ) {
 				cb( 'runTest', resp.prefix, resp.title );
 				break;
 			case 404:
+				// console.log(response);
 				console.log( 'The server doesn\'t have any work for us right now, waiting half a minute....' );
-				setTimeout( function () { cb( 'start' ); }, 30000 );
+				setTimeout( function () { cb( 'startAfter404' ); }, 30000 );
 				break;
 			case 426:
 				console.log( "Update required, exiting." );
@@ -292,19 +298,22 @@ var runTest = function( cb, prefix, title ) {
 
 	// TODO: Query to MySQL dump for result with commit = commit, and test = test. return result.
 	testsRun++;
-	console.log(testsRun);
+	console.error(testsRun);
 
-	// console.log(currentCommit);
+	// console.log(commit);
 	// console.log(title);
 	// console.log(prefix);
+	// console.log(commit);
 
-	db.query( dbGetResultWithCommit, [ currentCommit[0], title, prefix ], function (err, results) {
+	db.query( dbGetResultWithCommit, [ commit, title, prefix ], function (err, results) {
 		if (err) {
 			console.log(err);
 		} else {
 			if (results[0] == null) {
+				// console.log("no results failed...")
 				cb ('postResult', err, '', prefix, title, null);
 			} else {
+				// console.log("results: " + results[0].result);
 				cb( 'postResult', err, results[0].result, prefix, title, null );
 			}
 		}
@@ -316,6 +325,8 @@ var runTest = function( cb, prefix, title ) {
 /**
  * Get the current git commit hash.
  */
+var commitPair = [];
+
 var getGitCommit = function( cb ) {
 	// 
 
@@ -337,17 +348,16 @@ var getGitCommit = function( cb ) {
 
 	// TODO: Keep count of how many tests for current commit we've done, once we've tested all everything, go to next commit.
 	// console.log("get git commit");
-	var TotalTests = 160607;
-	// console.log(currentCommit);
-	if (currentCommit == null) {
+	// console.log(commit);
+	if (commit == null) {
 		console.log("init-ing stuff");
-		currentCommit = commitsList.pop();
+		commitPair = commitsList.pop();
 		console.time("timing");
 	}
 
 	if (TotalTests == testsRun) {
 		// return next commit;
-		currentCommit = commitsList.pop();
+		commitPair = commitsList.pop();
 		testsRun = 0;
 
 	//	if (commitIndex % 10 == 0) {
@@ -356,10 +366,12 @@ var getGitCommit = function( cb ) {
 	//	}
 
 		commitIndex++;
+		console.log(commitIndex);
+		console.error("NEW COMMIT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 	}
-	
-	// console.log(currentCommit);
-	cb(currentCommit[0], currentCommit[1]);
+
+	// console.log(commit);
+	cb(commitPair[0], commitPair[1]);
 };
 
 var postResult = function( err, result, prefix, title, finalCB, cb ) {
@@ -418,13 +430,28 @@ var callbackOmnibus = function(which) {
 			postResult.apply( null, args );
 			break;
 
-		case 'start':
-			getGitCommit( function ( latestCommit ) {
-				if ( latestCommit !== commit ) {
-					console.log( 'Exiting because the commit hash changed' );
-					process.exit( 0 );
-				}
+		case 'startAfter404':
+			console.log('start after 404');
+			testsRun = TotalTests;
+			getGitCommit( function ( latestCommit, commitTime ) {
+				// if ( latestCommit !== commit ) {
+				// 	console.log( 'Exiting because the commit hash changed' );
+				// 	process.exit( 0 );
+				// }
+				commit = latestCommit;
+				ctime = commitTime;
+				getTitle( callbackOmnibus );
+			} );
+			break;
 
+		case 'start':
+			getGitCommit( function ( latestCommit, commitTime ) {
+				// if ( latestCommit !== commit ) {
+				// 	console.log( 'Exiting because the commit hash changed' );
+				// 	process.exit( 0 );
+				// }
+				commit = latestCommit;
+				ctime = commitTime;
 				getTitle( callbackOmnibus );
 			} );
 			break;
