@@ -10,9 +10,9 @@ var express = require( 'express' ),
 var defaults = {
 	'host': 'localhost',
 	'port': 3306,
-	'database': 'parsoid',
-	'user': 'parsoid',
-	'password': 'parsoidpw',
+	'database': 'testreduce',
+	'user': 'testreduce',
+	'password': '',
 	'debug': false,
 	'fetches': 6,
 	'tries': 6,
@@ -491,6 +491,7 @@ var lastFetchedDate = new Date(0);
 var knownCommits;
 
 var getTitle = function ( req, res ) {
+	console.log("GET TITLE!!");
 	var commitHash = req.query.commit;
 	var commitDate = new Date( req.query.ctime );
 	var knownCommit = knownCommits && knownCommits[ commitHash ];

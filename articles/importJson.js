@@ -10,15 +10,15 @@ var optimist = require( 'optimist' );
 var defaults = {
 	'host': 'localhost',
 	'port': 3306,
-	'database': 'parsoid',
-	'user': 'parsoid',
-	'password': 'parsoidpw'
+	'database': 'testreduce',
+	'user': 'testreduce',
+	'password': ''
 };
 
 // Settings file
 var settings;
 try {
-	settings = require( './server.settings.js' );
+	settings = require( './server-mysql.settings.js' );
 } catch ( e ) {
 	settings = {};
 }
