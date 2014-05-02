@@ -491,7 +491,6 @@ var lastFetchedDate = new Date(0);
 var knownCommits;
 
 var getTitle = function ( req, res ) {
-	console.log("GET TITLE!!");
 	var commitHash = req.query.commit;
 	var commitDate = new Date( req.query.ctime );
 	var knownCommit = knownCommits && knownCommits[ commitHash ];
