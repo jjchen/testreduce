@@ -125,7 +125,8 @@ function getTests(cb) {
                 }
                 this.testsList[results.rows[i][0]] = errors;
             }
-            cb(null, 0, results.rows.length);
+            var cbBound = cb.bind(this);
+            cbBound(null, 0, results.rows.length);
         }
     };
 
@@ -139,6 +140,7 @@ function getTests(cb) {
 //note to the person doing inittestpq, this function will call cb(null) twice
 //the line after checking if we have no tests left 
 function initTestPQ(commitIndex, numTestsLeft, cb) {
+    console.log("initTestPQ");
     var queryCB = function (err, results) {
         if (err) {
             console.log('in error init test PQ');
@@ -163,15 +165,18 @@ function initTestPQ(commitIndex, numTestsLeft, cb) {
             }
 
             if (numTestsLeft - results.rows.length <= 0 || this.commits[commitIndex].isKeyframe) {
-                cb(null);
+                var cbBound = cb.bind(this);
+                cbBound(null);
             } else {
                 var redo = initTestPQ.bind(this);
                 return redo(commitIndex + 1, numTestsLeft - results.rows.length, cb);
             }
         }
     };
-    console.log(commitIndex);
+    // console.log(commitIndex);
     var lastCommit = this.commits[commitIndex].hash;
+
+    // console.log(lastCommit);
 
     this.latestRevision.commit = lastCommit;
     //console.log("lastcommit: " + lastCommit + " lasthash: " + lastHash );
@@ -297,7 +302,7 @@ CassandraBackend.prototype.getTestToRetry = function () {
 
 CassandraBackend.prototype.updateCommits = function (lastCommitTimestamp, commit, date) {
     if (lastCommitTimestamp < date) {
-        var numCommits = this.commits.unshift( { hash: commit, timestamp: date, isKeyframe: false } );
+        var numCommits = this.commits.unshift( { hash: new Buffer(commit), timestamp: date, isKeyframe: true } );
         cql = 'insert into commits (hash, tid, keyframe) values (?, ?, ?);';
         args = [new Buffer(commit), tidFromDate(date), false];
         this.client.execute(cql, args, this.consistencies.write, function (err, result) {
@@ -306,32 +311,54 @@ CassandraBackend.prototype.updateCommits = function (lastCommitTimestamp, commit
             }
         });
 
+        console.log("refilling testQueue");
+
         // re-fill testQueue
         this.testQueue = new PriorityQueue(function (a, b) {
                 return a.score - b.score;
             });
 
-        this.tasks =[getTests.bind(this), initTestPQ.bind(this)]; 
+        // this.tasks =[getTests.bind(this), initTestPQ.bind(this)]; 
         // Load all the tests from Cassandra - do this when we see a new commit hash
+ 
+        var refillTests = getTests.bind(this);
 
-        async.waterfall(this.tasks, function (err, result) {
-            if (err) {
-                console.log('failure in re-fill', err);
-            }
-        });
+        // console.log("outside: " + this.commits);
+
+        refillTests(function (err, commitIndex, numTestsLeft) {
+            var refillTestPQ = initTestPQ.bind(this);
+
+            // console.log("inside: " + this.commits);            
+
+            refillTestPQ(commitIndex + 1, numTestsLeft, function (err) {
+                if (err) {
+                    console.log('failure in re-fill: ' + err);
+                }
+            });
+        }); 
+
+        // async.waterfall(this.tasks, function (err, result) {
+        //     if (err) {
+        //         console.log('failure in re-fill', err);
+        //     }
+        // });
 
         this.runningQueue = [];
 
         if (numCommits > 1) {
             var prevCommit = this.commits[1];
             this.getStatistics(new Buffer(prevCommit), function (err, result) {
-                cql = 'insert into revision_summary (revision, errors, skips, fails, numtests) values (?, ? , ? , ?, ?);';
-                args = [new Buffer(prevCommit), result.averages.errors, result.averages.skips, result.averages.fails, result.averages.numtests];
-                this.client.execute(cql, args, this.consistencies.write, function(err, result) {
-                    if (err) {
-                        console.log(err);
-                    }
-                });
+                if (err) {
+                    console.log(err);
+                } else {
+                    cql = 'insert into revision_summary (revision, errors, skips, fails, numtests) values (?, ? , ? , ?, ?);';
+                    args = [new Buffer(prevCommit), result.averages.errors, result.averages.skips, result.averages.fails, result.averages.numtests];
+                    this.client.execute(cql, args, this.consistencies.write, function(err, result) {
+                        if (err) {
+                            console.log(err);
+                        }
+                    });
+                }
             });
         }
         return true;
@@ -351,6 +378,8 @@ CassandraBackend.prototype.updateCommits = function (lastCommitTimestamp, commit
  * JSON, for example [ 'enwiki', 'some title', 12345 ]
  */
 CassandraBackend.prototype.getTest = function (clientCommit, clientDate, cb) {
+    // console.log("get Test");
+    // console.log("get test");
     var retry = this.getTestToRetry(),
         lastCommitTimestamp = this.commits[0].timestamp,
         retVal = {
@@ -360,30 +389,108 @@ CassandraBackend.prototype.getTest = function (clientCommit, clientDate, cb) {
             }
         };
 
-    var newCommit = this.updateCommits(lastCommitTimestamp, clientCommit, clientDate);
-    if (lastCommitTimestamp > clientDate) {
-        retVal = {
-            error: {
-                code: 'BadCommitError',
-                message: 'Commit too old'
+
+    if (lastCommitTimestamp < clientDate) {
+        console.log("new commit");
+        var numCommits = this.commits.unshift( { hash: new Buffer(clientCommit), timestamp: clientDate, isKeyframe: false } );
+        cql = 'insert into commits (hash, tid, keyframe) values (?, ?, ?);';
+        args = [new Buffer(clientCommit), tidFromDate(clientDate), false];
+        this.client.execute(cql, args, this.consistencies.write, function (err, result) {
+            if (err) {
+                console.log(err);
             }
-        };
-    } else if (retry && !newCommit) {
-        retVal = {
-            test: retry
-        };
-    } else if (this.testQueue.size()) {
-        var test = this.testQueue.deq();
-        //ID for identifying test, containing title, prefix and oldID.
-        this.runningQueue.unshift({
-            test: test,
-            startTime: new Date()
         });
-        retVal = {
-            test: test.test
-        };
+
+        console.log("refilling testQueue");
+
+        // re-fill testQueue
+        this.testQueue = new PriorityQueue(function (a, b) {
+                return a.score - b.score;
+            });
+        this.runningQueue = [];
+
+        // this.tasks =[getTests.bind(this), initTestPQ.bind(this)]; 
+        // Load all the tests from Cassandra - do this when we see a new commit hash
+ 
+        var refillTests = getTests.bind(this);
+
+        // console.log("outside: " + this.commits);
+
+        refillTests(function (err, commitIndex, numTestsLeft) {
+            var refillTestPQ = initTestPQ.bind(this);
+
+            // console.log("inside: " + this.commits);            
+            refillTestPQ(commitIndex + 1, numTestsLeft, function (err) {
+                if (err) {
+                    console.log('failure in re-fill: ' + err);
+                } else {
+                    if (this.testQueue.size()) {
+                        var test = this.testQueue.deq();
+                        //ID for identifying test, containing title, prefix and oldID.
+                        this.runningQueue.unshift({
+                            test: test,
+                            startTime: new Date()
+                        });
+                        retVal = {
+                            test: test.test
+                        };
+                    }
+                    console.log("Return!: " + retVal);
+                    cb(retVal);
+                }
+            });
+        }); 
+
+        // async.waterfall(this.tasks, function (err, result) {
+        //     if (err) {
+        //         console.log('failure in re-fill', err);
+        //     }
+        // });
+
+
+        if (numCommits > 1) {
+            var prevCommit = this.commits[1];
+            this.getStatistics(new Buffer(prevCommit), function (err, result) {
+                if (err) {
+                    console.log(err);
+                } else {
+                    cql = 'insert into revision_summary (revision, errors, skips, fails, numtests) values (?, ? , ? , ?, ?);';
+                    args = [new Buffer(prevCommit), result.averages.errors, result.averages.skips, result.averages.fails, result.averages.numtests];
+                    this.client.execute(cql, args, this.consistencies.write, function(err, result) {
+                        if (err) {
+                            console.log(err);
+                        }
+                    });
+                }
+            });
+        }
+
+    } else {
+        if (lastCommitTimestamp > clientDate) {
+            retVal = {
+                error: {
+                    code: 'BadCommitError',
+                    message: 'Commit too old'
+                }
+            };
+        } else if (retry) {
+            retVal = {
+                test: retry
+            };
+        } else if (this.testQueue.size()) {
+            var test = this.testQueue.deq();
+            //ID for identifying test, containing title, prefix and oldID.
+            this.runningQueue.unshift({
+                test: test,
+                startTime: new Date()
+            });
+            retVal = {
+                test: test.test
+            };
+        }
+        console.log(retVal);
+        cb(retVal);
     }
-    cb(retVal);
 };
 
 

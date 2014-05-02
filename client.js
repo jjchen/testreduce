@@ -220,6 +220,7 @@ var getTitle = function( cb ) {
 	retries = 10;
 
 	var callback = function ( error, response, body ) {
+		// console.log("callback");
 		if (error || !response) {
 			setTimeout( function () { cb( 'start' ); }, 15000 );
 		}
@@ -326,6 +327,8 @@ var runTest = function( cb, prefix, title ) {
  * Get the current git commit hash.
  */
 var commitPair = [];
+var startTime; 
+var endTime;
 
 var getGitCommit = function( cb ) {
 	// 
@@ -339,7 +342,7 @@ var getGitCommit = function( cb ) {
 	// 		lastCommit = cobj[1];
 	// 		// convert the timestamp to UTC
 	// 		lastCommitTime = new Date(cobj[2]).toISOString();
-	// 		//console.log( 'New commit: ', cobj[1], lastCommitTime );
+	// 		//console.log( 'New commit: ', cobjf[1], lastCommitTime );
 	// 		cb( cobj[1], lastCommitTime );
 	// 	} );
 	// } else {
@@ -353,6 +356,9 @@ var getGitCommit = function( cb ) {
 		console.log("init-ing stuff");
 		commitPair = commitsList.pop();
 		console.time("timing");
+		startTime = Date.now();
+		console.log(startTime);
+		console.error(startTime);
 	}
 
 	if (TotalTests == testsRun) {
@@ -363,6 +369,13 @@ var getGitCommit = function( cb ) {
 	//	if (commitIndex % 10 == 0) {
 			console.timeEnd("timing");
 			console.time("timing");
+			endTime = Date.now();
+
+			console.log(endTime);
+			console.error(endTime);
+			console.log(endTime - startTime);
+			console.error(endTime - startTime);
+			startTime = Date.now();
 	//	}
 
 		commitIndex++;

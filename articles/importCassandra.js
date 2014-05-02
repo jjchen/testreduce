@@ -22,19 +22,29 @@ var createTestBlob = function(prefix, title) {
     return new Buffer(JSON.stringify({prefix: prefix, title:title, oldid:42}));
 };
 
+var importedIntoTest = 0;
+
 var insertTestBlob = function(prefix, title) {
-    console.log('insert called');
+    // console.log('insert called');
     var query = 'insert into tests (test) values (?);';
     client.execute(query, [createTestBlob(prefix, title)], 1, function(err, result) {
         if (err) {
             console.log(err);
         } else {
+            importedIntoTest++;
+            if (importedIntoTest == titlesCount && importedIntoTestByScore == titlesCount) {
+                console.log('done importing ' + titlesCount + ' wiki articles');
+            }
+            // console.log('insert: ' + importedIntoTest);
         }
     });
 };
 
+
+var importedIntoTestByScore = 0;
+
 var insertTestByScore = function(prefix, title) {
-    console.log("insert called on testbyscore")
+    // console.log("insert called on testbyscore")
     var query = "insert into test_by_score (commit, delta, test, score) values (?, ?, ?, ?);",
         commit = new Buffer(DUMMYCOMMIT),
         delta = 0,
@@ -44,20 +54,29 @@ var insertTestByScore = function(prefix, title) {
         if (err) {
             console.log(err);
         } else {
+            importedIntoTestByScore++;
+
+            if (importedIntoTest == titlesCount && importedIntoTestByScore == titlesCount) {
+                console.log('done importing ' + titlesCount  + ' wiki articles');
+            }            
+            // console.log('insert: ' + importedIntoTestByScore);
         }
     });
 };
+
+var titlesCount = 0;
 
 var loadJSON = function(prefix) {
     var i, titles = require(['./', prefix, 'wiki-10000.json'].join(''));
     console.log('importing ' + prefix + ' wiki articles from:');
     console.log(['./', prefix, 'wiki-10000.json'].join(''));
+    titlesCount = titles.length;
+
     for (i = 0; i < titles.length; i++) {
-        console.log(prefix, titles[i]);
+        // console.log(prefix, titles[i]);
         insertTestBlob(prefix + 'wiki', titles[i]);
         insertTestByScore(prefix + 'wiki', titles[i]);
     }
-    console.log('done importing ' + prefix + ' wiki articles');
 };
 
 loadJSON(argv['_'][0]);
