@@ -142,6 +142,7 @@ function getTests(cb) {
 function initTestPQ(commitIndex, numTestsLeft, cb) {
     console.log("initTestPQ");
     var queryCB = function (err, results) {
+        console.log("initTestPQ query callback");
         if (err) {
             console.log('in error init test PQ');
             cb(err);
@@ -150,6 +151,7 @@ function initTestPQ(commitIndex, numTestsLeft, cb) {
 
             cb(null);
         } else {
+            console.log("inside else");
             for (var i = 0; i < results.rows.length; i++) {
                 var result = results.rows[i];
 
@@ -185,11 +187,15 @@ function initTestPQ(commitIndex, numTestsLeft, cb) {
     }
     var cql = 'select test, score, commit from test_by_score where commit = ?';
 
+    console.log('initTestPQ start query');
+
     this.client.execute(cql, [lastCommit], this.consistencies.write, queryCB.bind(this));
 }
 
 function initTopFails(cb) {
+    console.log("init top fails");
     var queryCB = function (err, results) {
+        console.log("init top fails callback");
         if (err) {
             console.log('in error init top fails');
             cb(err);
@@ -197,16 +203,20 @@ function initTopFails(cb) {
             console.log("no results found in initTopFails")
             cb(null);
         } else {
+            console.log("before for statement");
+            console.time("topfails");
             for (var i = 0; i < results.rows.length; i++) {
+                console.log(i);
                 var result = results.rows[i];
-                var index = findWithAttr(this.topFailsArray, "test", result[0]);
-                if (index === -1 || this.topFailsArray === undefined ) {
+                // var index = findWithAttr(this.topFailsArray, "test", result[0]);
+                // if (index === -1 || this.topFailsArray === undefined ) {
                     this.topFailsArray.push({ test: result[0], score: result[1], commit: result[2].toString()});
-                } else if(this.topFailsArray[index].score <= result[1]) {
-                    this.topFailsArray[index] ={ test: result[0], score: result[1], commit: result[2].toString()};
-                }
+                // } else if(this.topFailsArray[index].score <= result[1]) {
+                //     this.topFailsArray[index] ={ test: result[0], score: result[1], commit: result[2].toString()};
+                // }
             }
-
+            console.timeEnd("topfails");
+            console.log("after for statement");
             this.commitFails++;
             if (this.commitFails < this.commits.length) {
                 var redo = initTopFails.bind( this );
@@ -488,7 +498,7 @@ CassandraBackend.prototype.getTest = function (clientCommit, clientDate, cb) {
                 test: test.test
             };
         }
-        console.log(retVal);
+        // console.log(retVal);
         cb(retVal);
     }
 };
@@ -732,13 +742,13 @@ CassandraBackend.prototype.addResult = function (test, commit, result, cb) {
 
 
     // Update topFails
-    var index = findWithAttr(this.topFailsArray, "test", test);
-    if (index != -1 && this.topFailsArray[index].score <= score) {
-        this.topFailsArray[index].score = score;
-        this.topFailsArray[index].commit = commit;
-       // console.log("updated score");
-        this.topFailsArray.sort(function(a, b) { return b.score - a.score;} );
-    }
+    // var index = findWithAttr(this.topFailsArray, "test", test);
+    // if (index != -1 && this.topFailsArray[index].score <= score) {
+    //     this.topFailsArray[index].score = score;
+    //     this.topFailsArray[index].commit = commit;
+    //    // console.log("updated score");
+    //     this.topFailsArray.sort(function(a, b) { return b.score - a.score;} );
+    // }
 }
 
 var statsScore = function (skipCount, failCount, errorCount) {
