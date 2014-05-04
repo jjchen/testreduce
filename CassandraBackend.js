@@ -314,7 +314,7 @@ CassandraBackend.prototype.updateCommits = function (lastCommitTimestamp, commit
     if (lastCommitTimestamp < date) {
         var numCommits = this.commits.unshift( { hash: new Buffer(commit), timestamp: date, isKeyframe: true } );
         cql = 'insert into commits (hash, tid, keyframe) values (?, ?, ?);';
-        args = [new Buffer(commit), tidFromDate(date), false];
+        args = [new Buffer(commit), tidFromDate(date), true];
         this.client.execute(cql, args, this.consistencies.write, function (err, result) {
             if (err) {
                 console.log(err);
